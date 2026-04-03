@@ -8,7 +8,6 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Handle OPTIONS request
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
@@ -18,10 +17,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { message, context, systemPrompt } = req.body;
+  const { messages, systemPrompt } = req.body;
 
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Messages array is required' });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -41,15 +40,10 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-5',
         max_tokens: 1024,
         system: systemPrompt || 'You are a helpful AI assistant.',
-        messages: [
-          {
-            role: 'user',
-            content: message,
-          },
-        ],
+        messages: messages,
       }),
     });
 
@@ -62,11 +56,9 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    const aiMessage = data.content[0].text;
-
     return res.status(200).json({
       success: true,
-      response: aiMessage
+      response: data.content[0].text
     });
 
   } catch (error) {

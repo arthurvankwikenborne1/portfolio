@@ -111,7 +111,7 @@ const translations = {
     featuredBadge: "Uitgelicht",
 
     // Chat Section
-    askMeAnything: "Stel Me Alles Vragen",
+    askMeAnything: "Stel Me Een Vraag",
     chatSubtitle: "Chat met mijn AI Agent",
     chatPlaceholder: "Stel me vragen over Arthurs vaardigheden, projecten of ervaring...",
     send: "Verzenden",

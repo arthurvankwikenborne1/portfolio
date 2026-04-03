@@ -315,11 +315,6 @@ function sendMessage() {
 
   if (!message) return;
 
-  if (!ANTHROPIC_API_KEY) {
-    showChatError(t('apiKeyRequired'));
-    return;
-  }
-
   // Add user message to chat
   addMessageToChat(message, 'user');
   input.value = '';
@@ -331,6 +326,19 @@ function sendMessage() {
   getAIResponse(message);
 }
 
+function renderMarkdown(text) {
+  // Escape HTML first, then apply safe markdown transforms
+  const escaped = escapeHtml(text);
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);padding:2px 5px;border-radius:3px;font-family:monospace;font-size:0.9em;">$1</code>')
+    .replace(/^[-•] (.+)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul style="margin:0.5em 0 0.5em 1.2em;padding:0;">$&</ul>')
+    .replace(/\n\n/g, '</p><p style="margin:0.6em 0 0;">')
+    .replace(/\n/g, '<br>');
+}
+
 function addMessageToChat(content, sender) {
   const chatMessages = document.getElementById('chatMessages');
   const messageEl = document.createElement('div');
@@ -338,11 +346,12 @@ function addMessageToChat(content, sender) {
 
   const avatar = sender === 'user' ? 'U' : 'A';
   const avatarClass = sender === 'user' ? 'user-avatar' : 'bot-avatar';
+  const renderedContent = sender === 'bot' ? renderMarkdown(content) : escapeHtml(content);
 
   messageEl.innerHTML = `
     <div class="message-avatar ${avatarClass}">${avatar}</div>
     <div class="message-content">
-      <p>${escapeHtml(content)}</p>
+      <p>${renderedContent}</p>
     </div>
   `;
 
@@ -393,22 +402,15 @@ function showChatError(error) {
 }
 
 async function getAIResponse(userMessage) {
-  try {
-    // Add message to history
-    chatHistory.push({
-      role: 'user',
-      content: userMessage,
-    });
+  // Add message to history before sending
+  chatHistory.push({ role: 'user', content: userMessage });
 
-    // Call our backend API instead of Anthropic directly
+  try {
     const response = await fetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: userMessage,
-        context: generateContextFromProfile(),
+        messages: chatHistory,
         systemPrompt: getSystemPrompt(),
       }),
     });
@@ -421,37 +423,41 @@ async function getAIResponse(userMessage) {
     const data = await response.json();
     const aiMessage = data.response;
 
-    // Add to history and display
-    chatHistory.push({
-      role: 'assistant',
-      content: aiMessage,
-    });
+    chatHistory.push({ role: 'assistant', content: aiMessage });
 
     removeLoadingIndicator();
     addMessageToChat(aiMessage, 'bot');
 
   } catch (error) {
     console.error('Chat Error:', error);
+    // Remove failed message from history so conversation stays consistent
+    chatHistory.pop();
     removeLoadingIndicator();
     showChatError(`Error: ${error.message}`);
   }
 }
 
 function getSystemPrompt() {
-  return `You are an AI Agent representing Arthur Van Kwikenborne, a Cloud Engineer and Cybersecurity & Infrastructure student at VIVES Kortrijk.
+  const lang = currentLanguage;
+  const langInstruction = lang === 'nl'
+    ? 'Detecteer de taal van de gebruiker en antwoord in diezelfde taal. Als de gebruiker Nederlands schrijft, antwoord je in het Nederlands. Als de gebruiker Engels schrijft, antwoord je in het Engels.'
+    : 'Detect the language the user writes in and always reply in that same language.';
 
-IMPORTANT CONTEXT ABOUT ARTHUR:
+  return `You are a smart AI Agent on the personal portfolio website of Arthur Van Kwikenborne. ${langInstruction}
+
+== ARTHUR'S PROFILE ==
 ${generateContextFromProfile()}
 
-Your role is to:
-1. Answer questions about Arthur's background, skills, projects, and experience
-2. Be enthusiastic and professional
-3. Provide detailed, helpful information
-4. If asked about something not in your knowledge base, be honest and say so
-5. Encourage visitors to connect with Arthur for more information
-
-Tone: Professional, friendly, and informative. Avoid being overly formal.
-Keep responses concise but informative (1-2 paragraphs typically).`;
+== HOW TO BEHAVE ==
+- Answer questions about Arthur's background, skills, projects, experience, and career goals accurately and enthusiastically.
+- For technical questions, draw concrete examples from his projects when possible.
+- If the visitor asks something not covered in the profile (e.g. Arthur's favorite color, personal opinions outside of work), be honest: "I don't have that information — feel free to reach out to Arthur directly at ${profileData.personal.email}"
+- If asked something completely off-topic (unrelated to Arthur), briefly acknowledge it and redirect: "I'm here specifically to answer questions about Arthur's portfolio and career. Is there anything about his work or skills I can help you with?"
+- For ambiguous questions, interpret them charitably in the context of Arthur's profile and answer accordingly.
+- Use markdown formatting when it adds clarity: **bold** for emphasis, bullet lists for multiple items, \`code\` for tech terms.
+- Encourage visitors to connect via LinkedIn or email when there's a natural opportunity (not every message).
+- Tone: professional, friendly, confident. Never stiff or overly formal.
+- Keep responses focused: 1–3 short paragraphs or a clean list. Avoid walls of text.`;
 }
 
 function generateContextFromProfile() {
